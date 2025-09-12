@@ -1,4 +1,3 @@
-from llama_cpp import Llama
 from openai import OpenAI
 from loguru import logger
 from time import sleep
@@ -10,13 +9,7 @@ class LLM:
         if api_key:
             self.llm = OpenAI(api_key=api_key, base_url=base_url)
         else:
-            self.llm = Llama.from_pretrained(
-                repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
-                filename="qwen2.5-3b-instruct-q4_k_m.gguf",
-                n_ctx=5_000,
-                n_threads=4,
-                verbose=False,
-            )
+            raise ValueError("API key must be provided for OpenAI.")
         self.model = model
         self.lang = lang
 

@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 from functools import cached_property
 from tempfile import TemporaryDirectory
@@ -199,6 +200,72 @@ class ArxivPaper:
             ]
         )
         return tldr
+    
+    @cached_property
+    def key_concepts(self) -> dict[str,str]:
+        introduction = ""
+        conclusion = ""
+        if self.tex is not None:
+            content = self.tex.get("all")
+            if content is None:
+                content = "\n".join(self.tex.values())
+            #remove cite
+            content = re.sub(r'~?\\cite.?\{.*?\}', '', content)
+            #remove figure
+            content = re.sub(r'\\begin\{figure\}.*?\\end\{figure\}', '', content, flags=re.DOTALL)
+            #remove table
+            content = re.sub(r'\\begin\{table\}.*?\\end\{table\}', '', content, flags=re.DOTALL)
+            #find introduction and conclusion
+            # end word can be \section or \end{document} or \bibliography or \appendix
+            match = re.search(r'\\section\{Introduction\}.*?(\\section|\\end\{document\}|\\bibliography|\\appendix|$)', content, flags=re.DOTALL)
+            if match:
+                introduction = match.group(0)
+            match = re.search(r'\\section\{Conclusion\}.*?(\\section|\\end\{document\}|\\bibliography|\\appendix|$)', content, flags=re.DOTALL)
+            if match:
+                conclusion = match.group(0)
+        llm = get_llm()
+        prompt = """Given the title, abstract, introduction, conclusion and a brief TLDR of a paper in latex format, give the explanation of some key concepts, especially the concepts in the TLDR.
+        
+        The key concepts should be in both __LANG__ and the original language of the paper, and the explanations should be in __LANG__ only.
+
+        Your response should be a python dictionary, where the keys are the key concepts in both languages and the values are the explanations of the key concepts. You should only return the pure string of the python dictionary, WITHOUT any other text like ``` or ```python.
+
+        \\title{__TITLE__}
+        \\begin{abstract}__ABSTRACT__\\end{abstract}
+        __INTRODUCTION__
+        __CONCLUSION__
+        \\begin{tldr}__TLDR__\\end{tldr}
+        """
+        prompt = prompt.replace('__LANG__', llm.lang)
+        prompt = prompt.replace('__TITLE__', self.title)
+        prompt = prompt.replace('__ABSTRACT__', self.summary)
+        prompt = prompt.replace('__INTRODUCTION__', introduction)
+        prompt = prompt.replace('__CONCLUSION__', conclusion)
+
+        # use gpt-4o tokenizer for estimation
+        enc = tiktoken.encoding_for_model("gpt-4o")
+        prompt_tokens = enc.encode(prompt)
+        prompt_tokens = prompt_tokens[:4000]  # truncate to 4000 tokens
+        prompt = enc.decode(prompt_tokens)
+
+        key_concepts = llm.generate(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user.",
+                },
+                {"role": "user", "content": prompt},
+            ]
+        ).replace('```python','').replace('```','')
+        try:
+            key_concepts = json.loads(key_concepts)
+        except Exception as e:
+            logger.debug(f"Failed to extract key concepts of {self.arxiv_id}: {e}")
+            key_concepts = {}
+        if not isinstance(key_concepts, dict):
+            logger.debug(f"Failed to extract key concepts of {self.arxiv_id}: Not a dictionary.")
+            return {}
+        return {str(k):str(v) for k,v in key_concepts.items()}
 
     @cached_property
     def affiliations(self) -> Optional[list[str]]:

@@ -42,7 +42,7 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
         match_results = [matcher(p) for p in c['paths']]
         if not any(match_results):
             new_corpus.append(c)
-    os.remove(filename)
+    # os.remove(filename)
     return new_corpus
 
 

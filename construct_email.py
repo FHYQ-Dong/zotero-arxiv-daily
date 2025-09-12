@@ -8,6 +8,7 @@ import smtplib
 import datetime
 import time
 from loguru import logger
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 framework = """
 <!DOCTYPE HTML>
@@ -59,7 +60,7 @@ def get_empty_html():
   """
   return block_template
 
-def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, pdf_url:str, code_url:str=None, affiliations:str=None):
+def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, tldr:str, key_concepts:dict[str, str], pdf_url:str, code_url:str=None, affiliations:str=None):
     code = f'<a href="{code_url}" style="display: inline-block; text-decoration: none; font-size: 14px; font-weight: bold; color: #fff; background-color: #5bc0de; padding: 8px 16px; border-radius: 4px; margin-left: 8px;">Code</a>' if code_url else ''
     block_template = """
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-family: Arial, sans-serif; border: 1px solid #ddd; border-radius: 8px; padding: 16px; background-color: #f9f9f9;">
@@ -87,7 +88,20 @@ def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, 
     </tr>
     <tr>
         <td style="font-size: 14px; color: #333; padding: 8px 0;">
-            <strong>TLDR:</strong> {abstract}
+            <strong>TLDR:</strong> {tldr}
+        </td>
+    </tr>
+    <tr>
+        <td style="font-size: 14px; color: #333; padding: 8px 0;">
+            <strong>Key Concepts:</strong> 
+            <ul>
+                {key_concepts}
+            </ul>
+        </td>
+    </tr>
+    <tr>
+        <td style="font-size: 14px; color: #333; padding: 8px 0;">
+            <strong>Abstract:</strong> {abstract}
         </td>
     </tr>
 
@@ -99,7 +113,12 @@ def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, 
     </tr>
 </table>
 """
-    return block_template.format(title=title, authors=authors,rate=rate,arxiv_id=arxiv_id, abstract=abstract, pdf_url=pdf_url, code=code, affiliations=affiliations)
+    if key_concepts:
+        key_concepts_block = ''.join([f'<li><strong>{k}:</strong> {v}</li>' for k, v in key_concepts.items()])
+    else:
+        key_concepts_block = '<li>Not Available</li>'
+
+    return block_template.format(title=title, authors=authors,rate=rate,arxiv_id=arxiv_id, tldr=tldr, abstract=abstract, key_concepts=key_concepts_block, pdf_url=pdf_url, code=code, affiliations=affiliations)
 
 def get_stars(score:float):
     full_star = '<span class="full-star">⭐</span>'
@@ -119,11 +138,8 @@ def get_stars(score:float):
 
 
 def render_email(papers:list[ArxivPaper]):
-    parts = []
-    if len(papers) == 0 :
-        return framework.replace('__CONTENT__', get_empty_html())
     
-    for p in tqdm(papers,desc='Rendering Email'):
+    def render_single(p:ArxivPaper):
         rate = get_stars(p.score)
         author_list = [a.name for a in p.authors]
         num_authors = len(author_list)
@@ -139,9 +155,26 @@ def render_email(papers:list[ArxivPaper]):
                 affiliations += ', ...'
         else:
             affiliations = 'Unknown Affiliation'
-        parts.append(get_block_html(p.title, authors,rate,p.arxiv_id ,p.tldr, p.pdf_url, p.code_url, affiliations))
-        time.sleep(10)
-
+        return p.score, get_block_html(p.title, authors, rate, p.arxiv_id, p.summary, p.tldr, p.key_concepts, p.pdf_url, p.code_url, affiliations)
+    
+    parts = []
+    if len(papers) == 0 :
+        return framework.replace('__CONTENT__', get_empty_html())
+    # fetch tldr concurrently
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_paper = {executor.submit(render_single, p): p for p in papers}
+        pbar = tqdm(total=len(papers), desc="Rendering papers")
+        for future in as_completed(future_to_paper):
+            try:
+                score, part = future.result()
+                parts.append((score, part))
+            except Exception as e:
+                logger.error(f"Error rendering paper {future_to_paper[future].arxiv_id}: {e}")
+            pbar.update(1)
+        pbar.close()
+    
+    parts.sort(key=lambda x: x[0], reverse=True)
+    parts = [p[1] for p in parts]
     content = '<br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)
 
@@ -156,13 +189,13 @@ def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:
     today = datetime.datetime.now().strftime('%Y/%m/%d')
     msg['Subject'] = Header(f'Daily arXiv {today}', 'utf-8').encode()
 
-    try:
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-    except Exception as e:
-        logger.warning(f"Failed to use TLS. {e}")
-        logger.warning(f"Try to use SSL.")
-        server = smtplib.SMTP_SSL(smtp_server, smtp_port)
+    # try:
+    #     server = smtplib.SMTP(smtp_server, smtp_port)
+    #     server.starttls()
+    # except Exception as e:
+    #     logger.warning(f"Failed to use TLS. {e}")
+    #     logger.warning(f"Try to use SSL.")
+    server = smtplib.SMTP_SSL(smtp_server, smtp_port)
 
     server.login(sender, password)
     server.sendmail(sender, [receiver], msg.as_string())
