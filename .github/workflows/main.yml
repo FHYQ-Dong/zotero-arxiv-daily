@@ -14,10 +14,26 @@ jobs:
           repository: ${{ vars.REPOSITORY }}
           ref: ${{ vars.REF }}
 
+      - name: Cache
+        uses: actions/cache@v3
+        id: cache-venv  # name for referring later
+        with:
+          path: ./.venv/  # what we cache: the virtualenv
+          # The cache key depends on requirements.txt
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-venv-
+
       - name: Setup uv
+        if: steps.cache-venv.outputs.cache-hit != 'true'
         uses: astral-sh/setup-uv@v3
         with:
           version: '0.5.4'
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          uv sync
 
       - name: Run script
         env:
@@ -38,4 +54,5 @@ jobs:
           MODEL_NAME: ${{ secrets.MODEL_NAME }}
           LANGUAGE: ${{ vars.LANGUAGE }}
         run: |
-          uv run main.py
+          . ./.venv/bin/activate
+          python main.py
