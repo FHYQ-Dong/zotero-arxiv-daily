@@ -7,7 +7,7 @@ load_dotenv(override=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from pyzotero import zotero
 from recommender import rerank_paper
-from construct_email import render_email, send_email
+from construct_email import render_email, send_email, send_email_resend
 from tqdm import trange,tqdm
 from loguru import logger
 from gitignore_parser import parse_gitignore
@@ -74,6 +74,23 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
     return papers
 
 
+def take_papers_with_tex(papers:list[ArxivPaper], max_num:int) -> list[ArxivPaper]:
+    # The Claude backend reads the LaTeX source, so papers without one are skipped
+    selected = []
+    for p in papers:
+        if max_num != -1 and len(selected) >= max_num:
+            break
+        try:
+            has_tex = p.full_text is not None
+        except Exception as e:
+            logger.warning(f"Failed to fetch source of {p.arxiv_id}: {e}")
+            has_tex = False
+        if has_tex:
+            selected.append(p)
+        else:
+            logger.info(f"Skipping {p.arxiv_id}: no LaTeX source.")
+    return selected
+
 
 parser = argparse.ArgumentParser(description='Recommender system for academic papers')
 
@@ -111,6 +128,7 @@ if __name__ == '__main__':
     add_argument('--sender', type=str, help='Sender email address')
     add_argument('--receiver', type=str, help='Receiver email address')
     add_argument('--sender_password', type=str, help='Sender email password')
+    add_argument('--resend_api_key', type=str, help='Resend API key; if set, email is sent through Resend instead of SMTP')
     add_argument(
         "--use_llm_api",
         type=bool,
@@ -141,6 +159,18 @@ if __name__ == '__main__':
         help="Language of TLDR",
         default="English",
     )
+    add_argument(
+        "--llm_backend",
+        type=str,
+        help="LLM backend: openai (OpenAI-compatible API) or claude_cli (Claude Code CLI with a Claude subscription)",
+        default="openai",
+    )
+    add_argument(
+        "--claude_model",
+        type=str,
+        help="Model alias or name for the claude_cli backend",
+        default="sonnet",
+    )
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
     assert (
@@ -170,9 +200,17 @@ if __name__ == '__main__':
     else:
         logger.info("Reranking papers...")
         papers = rerank_paper(papers, corpus)
-        if args.max_paper_num != -1:
+        if args.llm_backend == 'claude_cli':
+            papers = take_papers_with_tex(papers, args.max_paper_num)
+        elif args.max_paper_num != -1:
             papers = papers[:args.max_paper_num]
-        if args.use_llm_api:
+        if args.llm_backend == 'claude_cli':
+            logger.info("Using Claude Code CLI as global LLM.")
+            set_global_llm(model=args.claude_model, lang=args.language, backend='claude_cli')
+            # newest 1000 titles keep the list around 20k tokens even for a large library
+            library = sorted(corpus, key=lambda c: c['data']['dateAdded'], reverse=True)
+            ArxivPaper.library_titles = [c['data']['title'] for c in library if c['data'].get('title')][:1000]
+        elif args.use_llm_api:
             logger.info("Using OpenAI API as global LLM.")
             set_global_llm(api_key=args.openai_api_key, base_url=args.openai_api_base, model=args.model_name, lang=args.language)
         else:
@@ -180,7 +218,11 @@ if __name__ == '__main__':
             set_global_llm(lang=args.language)
 
     html = render_email(papers)
-    logger.info("Sending email...")
-    send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
+    if args.resend_api_key:
+        logger.info("Sending email via Resend...")
+        send_email_resend(args.sender, args.receiver, args.resend_api_key, html)
+    else:
+        logger.info("Sending email...")
+        send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
 

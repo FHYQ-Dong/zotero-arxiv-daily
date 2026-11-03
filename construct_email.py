@@ -5,6 +5,8 @@ from email.header import Header
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
 import smtplib
+import html
+import requests
 import datetime
 import time
 from loguru import logger
@@ -60,8 +62,14 @@ def get_empty_html():
   """
   return block_template
 
-def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, tldr:str, key_concepts:dict[str, str], pdf_url:str, code_url:str=None, affiliations:str=None):
+def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, tldr:str, key_concepts:dict[str, str], pdf_url:str, code_url:str=None, affiliations:str=None, cc_prompt:str=None):
     code = f'<a href="{code_url}" style="display: inline-block; text-decoration: none; font-size: 14px; font-weight: bold; color: #fff; background-color: #5bc0de; padding: 8px 16px; border-radius: 4px; margin-left: 8px;">Code</a>' if code_url else ''
+    cc = f'''<tr>
+        <td style="font-size: 14px; color: #333; padding: 8px 0;">
+            <strong>Prompt for Claude Code:</strong>
+            <pre style="white-space: pre-wrap; font-family: Consolas, monospace; font-size: 13px; background-color: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 8px;">{html.escape(cc_prompt)}</pre>
+        </td>
+    </tr>''' if cc_prompt else ''
     block_template = """
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-family: Arial, sans-serif; border: 1px solid #ddd; border-radius: 8px; padding: 16px; background-color: #f9f9f9;">
     <tr>
@@ -104,6 +112,7 @@ def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, 
             <strong>Abstract:</strong> {abstract}
         </td>
     </tr>
+    {cc}
 
     <tr>
         <td style="padding: 8px 0;">
@@ -118,7 +127,7 @@ def get_block_html(title:str, authors:str, rate:str,arxiv_id:str, abstract:str, 
     else:
         key_concepts_block = '<li>Not Available</li>'
 
-    return block_template.format(title=title, authors=authors,rate=rate,arxiv_id=arxiv_id, tldr=tldr, abstract=abstract, key_concepts=key_concepts_block, pdf_url=pdf_url, code=code, affiliations=affiliations)
+    return block_template.format(title=title, authors=authors,rate=rate,arxiv_id=arxiv_id, tldr=tldr, abstract=abstract, key_concepts=key_concepts_block, pdf_url=pdf_url, code=code, affiliations=affiliations, cc=cc)
 
 def get_stars(score:float):
     full_star = '<span class="full-star">⭐</span>'
@@ -155,7 +164,7 @@ def render_email(papers:list[ArxivPaper]):
                 affiliations += ', ...'
         else:
             affiliations = 'Unknown Affiliation'
-        return p.score, get_block_html(p.title, authors, rate, p.arxiv_id, p.summary, p.tldr, p.key_concepts, p.pdf_url, p.code_url, affiliations)
+        return p.score, get_block_html(p.title, authors, rate, p.arxiv_id, p.summary, p.tldr, p.key_concepts, p.pdf_url, p.code_url, affiliations, p.cc_prompt)
     
     parts = []
     if len(papers) == 0 :
@@ -200,3 +209,15 @@ def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:
     server.login(sender, password)
     server.sendmail(sender, [receiver], msg.as_string())
     server.quit()
+
+def send_email_resend(sender:str, receiver:str, api_key:str, html:str):
+    # sender must be an address on a domain verified in Resend
+    today = datetime.datetime.now().strftime('%Y/%m/%d')
+    response = requests.post(
+        'https://api.resend.com/emails',
+        headers={'Authorization': f'Bearer {api_key}'},
+        json={'from': f'Github Action <{sender}>', 'to': [receiver], 'subject': f'Daily arXiv {today}', 'html': html},
+        timeout=30,
+    )
+    if not response.ok:
+        raise RuntimeError(f"Resend API error {response.status_code}: {response.text[:300]}")

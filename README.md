@@ -70,6 +70,8 @@ Below are all the secrets you need to set. They are invisible to anyone includin
 | OPENAI_API_KEY | | str | API Key when using the API to access LLMs. You can get FREE API for using advanced open source LLMs in [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | sk-xxx |
 | OPENAI_API_BASE | | str | API URL when using the API to access LLMs. If not filled in, the default is the OpenAI URL. | https://api.siliconflow.cn/v1 |
 | MODEL_NAME | | str | Model name when using the API to access LLMs. If not filled in, the default is gpt-4o. Qwen/Qwen2.5-7B-Instruct is recommended when using [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | Qwen/Qwen2.5-7B-Instruct |
+| CLAUDE_CODE_OAUTH_TOKEN | | str | Long-lived OAuth token of your Claude Pro/Max subscription, generated locally with `claude setup-token`. Only needed when `LLM_BACKEND` is `claude_cli`; it is read by Claude Code only. | sk-ant-oat01-xxx |
+| RESEND_API_KEY | | str | If set, the email is sent through the [Resend](https://resend.com) API instead of SMTP, and `SMTP_SERVER`, `SMTP_PORT` and `SENDER_PASSWORD` are not needed. `SENDER` must then be an address on a domain you have verified in Resend. | re_xxx |
 
 There are also some public variables (Repository Variables) you can set, which are easy to edit.
 ![vars](./assets/repo_var.png)
@@ -80,6 +82,8 @@ There are also some public variables (Repository Variables) you can set, which a
 | REPOSITORY | | str | The repository that provides the workflow. If set, the value can only be `TideDra/zotero-arxiv-daily`, in which case, the workflow always pulls the latest code from this upstream repo, so that you don't need to sync your forked repo upon each update, unless the workflow file is changed. | `TideDra/zotero-arxiv-daily` |
 | REF | | str | The specified ref of the workflow to run. Only valid when REPOSITORY is set to `TideDra/zotero-arxiv-daily`. Currently supported values include `main` for stable version, `dev` for development version which has new features and potential bugs. | `main` |
 | LANGUAGE | | str | The language of TLDR; Its value is directly embeded in the prompt passed to LLM | Chinese |
+| LLM_BACKEND | | str | `openai` (default) uses the OpenAI-compatible API above. `claude_cli` runs every LLM call through the Claude Code CLI with your Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`): the TL;DR is written from the paper's cleaned full LaTeX source, papers without LaTeX source are skipped, and each paper in the email gets a prompt you can paste into Claude Code to discuss it, with an overview and associations to the papers in your Zotero library (the titles of your 1000 most recently added papers are sent to Claude). Usage counts against your subscription limits, so keep `MAX_PAPER_NUM` small. | claude_cli |
+| CLAUDE_MODEL | | str | Model alias or name for the `claude_cli` backend. Default to `sonnet`. | haiku |
 
 That's all! Now you can test the workflow by manually triggering it:
 ![test](./assets/test.png)
@@ -89,7 +93,7 @@ That's all! Now you can test the workflow by manually triggering it:
 
 Then check the log and the receiver email after it finishes.
 
-By default, the main workflow runs on 22:00 UTC everyday. You can change this time by editting the workflow config `.github/workflows/main.yml`.
+By default, the main workflow runs at 8:50 New York time (`America/New_York`, daylight saving handled by GitHub) everyday. You can change this time by editting the workflow config `.github/workflows/main.yml`.
 
 ### Local Running
 Supported by [uv](https://github.com/astral-sh/uv), this workflow can easily run on your local device if uv is installed:

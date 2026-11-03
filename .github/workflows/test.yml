@@ -17,6 +17,17 @@ jobs:
         with:
           version: '0.5.4'
 
+      - name: Setup Node
+        if: vars.LLM_BACKEND == 'claude_cli'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code
+        if: vars.LLM_BACKEND == 'claude_cli'
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.296
+
       - name: Run script
         env:
           ZOTERO_ID: ${{ secrets.ZOTERO_ID }}
@@ -35,5 +46,9 @@ jobs:
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           MODEL_NAME: ${{ secrets.MODEL_NAME }}
           LANGUAGE: ${{ vars.LANGUAGE }}
+          LLM_BACKEND: ${{ vars.LLM_BACKEND }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           uv run main.py --debug
