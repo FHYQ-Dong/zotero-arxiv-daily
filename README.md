@@ -93,7 +93,7 @@ That's all! Now you can test the workflow by manually triggering it:
 
 Then check the log and the receiver email after it finishes.
 
-By default, the main workflow runs at 8:50 New York time (`America/New_York`, daylight saving handled by GitHub) everyday. You can change this time by editting the workflow config `.github/workflows/main.yml`.
+By default, the main workflow runs at 05:30 UTC everyday, just after arXiv updates its RSS feeds. GitHub can start scheduled runs hours late, so when `RESEND_API_KEY` is set, the email from a scheduled run is delivered by Resend at 9:00 New York time (or right away if the run finishes after 9:00). You can change this time by editting the workflow config `.github/workflows/main.yml`.
 
 ### Local Running
 Supported by [uv](https://github.com/astral-sh/uv), this workflow can easily run on your local device if uv is installed:

@@ -220,7 +220,8 @@ if __name__ == '__main__':
     html = render_email(papers)
     if args.resend_api_key:
         logger.info("Sending email via Resend...")
-        send_email_resend(args.sender, args.receiver, args.resend_api_key, html)
+        # only scheduled runs wait for 9:00; manual runs send right away
+        send_email_resend(args.sender, args.receiver, args.resend_api_key, html, schedule=os.environ.get('GITHUB_EVENT_NAME') == 'schedule')
     else:
         logger.info("Sending email...")
         send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)

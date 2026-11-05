@@ -2,9 +2,9 @@ name: Send emails daily
 on:
   workflow_dispatch:
   schedule:
-    # 8:50 New Haven time (DST handled by GitHub) so the email lands around 9:00
-    - cron: '50 8 * * *'
-      timezone: "America/New_York"
+    # 05:30 UTC, just after arXiv's RSS update at midnight New York time. GitHub can start
+    # scheduled runs hours late, so the run starts early and Resend delivers the email at 9:00.
+    - cron: '30 5 * * *'
 
 jobs:
   calculate-and-send:

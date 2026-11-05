@@ -8,6 +8,7 @@ import smtplib
 import html
 import requests
 import datetime
+from zoneinfo import ZoneInfo
 import time
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -210,13 +211,21 @@ def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:
     server.sendmail(sender, [receiver], msg.as_string())
     server.quit()
 
-def send_email_resend(sender:str, receiver:str, api_key:str, html:str):
+def send_email_resend(sender:str, receiver:str, api_key:str, html:str, schedule:bool=False):
     # sender must be an address on a domain verified in Resend
     today = datetime.datetime.now().strftime('%Y/%m/%d')
+    payload = {'from': f'Github Action <{sender}>', 'to': [receiver], 'subject': f'Daily arXiv {today}', 'html': html}
+    if schedule:
+        # deliver at 9:00 New Haven time; if the run finished later than that, send right away
+        now = datetime.datetime.now(ZoneInfo('America/New_York'))
+        deliver_at = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        if now < deliver_at:
+            payload['scheduled_at'] = deliver_at.isoformat()
+            logger.info(f"Email scheduled for {payload['scheduled_at']}.")
     response = requests.post(
         'https://api.resend.com/emails',
         headers={'Authorization': f'Bearer {api_key}'},
-        json={'from': f'Github Action <{sender}>', 'to': [receiver], 'subject': f'Daily arXiv {today}', 'html': html},
+        json=payload,
         timeout=30,
     )
     if not response.ok:
