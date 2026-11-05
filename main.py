@@ -37,10 +37,15 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
     with open(filename,'w') as file:
         file.write(pattern)
     matcher = parse_gitignore(filename,base_dir='./')
+    def outermost_kept(path:str) -> str:
+        parts = path.split('/')
+        return next('/'.join(parts[:i]) for i in range(1, len(parts) + 1) if not matcher('/'.join(parts[:i])))
     new_corpus = []
     for c in corpus:
         match_results = [matcher(p) for p in c['paths']]
         if not any(match_results):
+            # a kept collection and its subcollections rank as one interest (see rerank_paper)
+            c['groups'] = [outermost_kept(p) for p in c['paths']]
             new_corpus.append(c)
     # os.remove(filename)
     return new_corpus

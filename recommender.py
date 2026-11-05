@@ -11,9 +11,11 @@ def rerank_paper(candidate:list[ArxivPaper],corpus:list[dict],model:str='avsolat
     # separately and take from those rankings in turn, so a small collection still gets its share.
     groups = {}
     for paper in corpus:
-        for path in paper['paths'] or ['<no collection>']:
-            groups.setdefault(path, []).append(paper)
-    logger.info("Ranking against: " + ", ".join(f"{path} ({len(g)})" for path, g in groups.items()))
+        # 'groups' comes from filter_corpus; without ZOTERO_IGNORE each top-level collection is one interest
+        names = paper.get('groups') or [p.split('/')[0] for p in paper['paths']]
+        for name in dict.fromkeys(names) or ['<no collection>']:
+            groups.setdefault(name, []).append(paper)
+    logger.info("Ranking against: " + ", ".join(f"{name} ({len(g)})" for name, g in groups.items()))
     rankings = []
     best_score = {}
     for group in groups.values():
